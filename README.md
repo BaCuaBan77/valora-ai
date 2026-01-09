@@ -1,5 +1,7 @@
 # Valora AI - B2B Pricing Estimator System
 
+## Project Description
+
 A B2B pricing quotation system that analyzes customer values, competitor rates, market conditions, and relationship data to provide AI-powered fair price estimates.
 
 ## Architecture

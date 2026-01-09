@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: valora-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-valora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-valora_password}
+      POSTGRES_DB: ${POSTGRES_DB:-valora_ai}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/migrations:/docker-entrypoint-initdb.d/migrations:ro
+      - ../database/seeds:/docker-entrypoint-initdb.d/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-valora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - valora-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: valora-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - valora-network
+
+  node-api:
+    build:
+      context: ../backend/node-api
+      dockerfile: ../docker/Dockerfile.node-api
+    container_name: valora-node-api
+    ports:
+      - "${NODE_API_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-valora}:${POSTGRES_PASSWORD:-valora_password}@postgres:5432/${POSTGRES_DB:-valora_ai}
+      REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://python-ml:8000
+      PORT: 3000
+    volumes:
+      - ../backend/node-api:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - valora-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  python-ml:
+    build:
+      context: ../backend/python-ml
+      dockerfile: ../docker/Dockerfile.python-ml
+    container_name: valora-python-ml
+    ports:
+      - "${PYTHON_ML_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-valora}:${POSTGRES_PASSWORD:-valora_password}@postgres:5432/${POSTGRES_DB:-valora_ai}
+      REDIS_URL: redis://redis:6379
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ../backend/python-ml:/app
+      - ml_models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - valora-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ml_models:
+    driver: local
+
+networks:
+  valora-network:
+    driver: bridge
+

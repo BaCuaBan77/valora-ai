@@ -1,4 +1,5 @@
 # Valora AI - B2B Pricing Estimator System
+![Valora AI Demo Screenshot](thumbnail.png)
 
 ## Project Description
 
